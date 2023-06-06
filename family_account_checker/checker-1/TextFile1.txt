@@ -1,0 +1,46 @@
+class CheckMembers:
+      def __init__(self):     
+         self.API = ["http://35.237.185.41:8000","http://35.185.205.157:8000"]
+         self.MEMBERS = spotify_upgrades.select()#.where(datetime.datetime.now() + datetime.timedelta(minutes = 0) > spotify_upgrades.last_check)
+         self.MEMBERSDOWNGRADED = 0
+         self.MEMBERSCOULDNTLOGIN = 0
+         self.MEMBERSTOREUPGRADE = 0
+
+         print("[CHECKING [{0}]  MEMBER ACCOUNTS]".format(len(self.MEMBERS)))
+         print("-------------------------")
+         if len(self.MEMBERS) > 0:
+            pool = ThreadPool(3)
+            pool.map(self.Start,self.MEMBERS)
+            pool.close()
+            pool.join()
+
+         print("     - [{0}] Members downgraded for not paying.".format(self.MEMBERSDOWNGRADED))
+         print("     - [{0}] Members couldn't login to check.".format(self.MEMBERSCOULDNTLOGIN))
+         print("     - [{0}] Members need accounts reupgraded.".format(self.MEMBERSTOREUPGRADE))
+         print("__________________________")
+      def Downgrade(self,acc,client):
+          getFamily = family_accounts.select().where(family_accounts.ID == acc.FID)
+          if getFamily:
+              print(getFamily.ID)
+              request = client.delete(random.choice(self.API) +"/family/" + getFamily.Username + ":" + getFamily.Password+"/" + acc.MembershipID,verify = True) 
+              if request.status_code == 204:
+                 self.MEMBERSDOWNGRADED += 1
+                 acc.delete_instance()
+      def Start(self,acc):
+            acc.last_check = datetime.datetime.now()
+            client = requests.Session()
+            request = client.get(random.choice(self.API) +"/family/" + acc.Username + ":" + acc.Password,verify = True)
+            if request.status_code == 200:
+               response = json.loads(request.text)
+               if response["premium"] == True:
+                  if acc.Payed == 0:                     
+                     self.Downgrade(acc,client)
+               else:
+                  if acc.Payed == 1:
+                     self.MEMBERSTOREUPGRADE += 1
+                     acc.MembershipID = ""
+            if request.status_code == 400:
+               response = json.loads(request.text)
+               if response["errors"][0]["message"] == "Invalid Credentials":
+                  self.MEMBERSCOULDNTLOGIN += 1
+            acc.save()
